@@ -12,7 +12,7 @@ const redis = new Redis({
   token: process.env.UPSTASH_REDIS_REST_TOKEN
 })
 
-/* ✅ مهم جداً */
+// Health check (مهم لRailway)
 app.get('/', (req, res) => {
   res.status(200).send('OK')
 })
@@ -23,14 +23,14 @@ app.post('/execute', async (req, res) => {
       return res.sendStatus(403)
     }
 
-    const count = await redis.incr('executions')
+    const executions = await redis.incr('executions')
 
     res.json({
       success: true,
-      executions: count
+      executions
     })
-  } catch (e) {
-    console.error('EXECUTE ERROR:', e)
+  } catch (err) {
+    console.error('EXECUTE ERROR:', err)
     res.status(500).json({ success: false })
   }
 })
