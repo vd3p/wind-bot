@@ -1,91 +1,54 @@
-require("dotenv").config()
+require("dotenv").config();
+const express = require("express");
+const { Client, GatewayIntentBits } = require("discord.js");
+const { Redis } = require("@upstash/redis");
 
-/* ================== IMPORTS ================== */
-const express = require("express")
-const cors = require("cors")
-const { Client, GatewayIntentBits } = require("discord.js")
-const { Redis } = require("@upstash/redis")
+const app = express();
+app.use(express.json());
 
-/* ================== DISCORD ================== */
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildVoiceStates
-  ]
-})
-
-client.once("ready", () => {
-  console.log(`🤖 Logged in as ${client.user.tag}`)
-})
-
-client.login(process.env.DISCORD_TOKEN)
-
-/* ================== REDIS ================== */
+// ====== Redis ======
 const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN
-})
+  token: process.env.UPSTASH_REDIS_REST_TOKEN,
+});
 
-/* ================== EXPRESS API ================== */
-const app = express()
-app.use(cors())
-app.use(express.json())
+// ====== Discord ======
+const client = new Client({
+  intents: [GatewayIntentBits.Guilds],
+});
 
+client.once("ready", () => {
+  console.log(`🤖 Logged in as ${client.user.tag}`);
+});
+
+client.login(process.env.DISCORD_TOKEN);
+
+// ====== HTTP health check (مهم جدًا) ======
 app.get("/", (req, res) => {
-  res.send("OK")
-})
+  res.send("OK");
+});
 
-/* ================== UPDATE VOICE CHANNEL ================== */
-async function updateVoiceChannel(count) {
-  try {
-    const channel = await client.channels.fetch(
-      process.env.VOICE_CHANNEL_ID
-    )
-
-    if (!channel) {
-      console.log("❌ Channel not found")
-      return
-    }
-
-    // 2 = Voice Channel
-    if (channel.type !== 2) {
-      console.log("❌ Not a voice channel")
-      return
-    }
-
-    const newName = `${count}`
-
-    if (channel.name !== newName) {
-      await channel.setName(newName)
-      console.log("🔁 Channel renamed to:", newName)
-    }
-  } catch (err) {
-    console.error("❌ Rename error:", err.message)
-  }
-}
-
-/* ================== EXECUTE ENDPOINT ================== */
+// ====== Execute endpoint ======
 app.post("/execute", async (req, res) => {
-  try {
-    if (req.headers["x-api-key"] !== process.env.API_KEY) {
-      return res.sendStatus(403)
-    }
-
-    const executions = await redis.incr("executions")
-
-    await updateVoiceChannel(executions)
-
-    res.json({
-      success: true,
-      executions
-    })
-  } catch (err) {
-    console.error("EXECUTE ERROR:", err)
-    res.status(500).json({ success: false })
+  if (req.headers["x-api-key"] !== process.env.API_KEY) {
+    return res.sendStatus(403);
   }
-})
 
-/* ================== START SERVER ================== */
+  const count = (await redis.incr("executions")) || 0;
+
+  // غير اسم الروم الصوتي
+  const guild = client.guilds.cache.first();
+  if (guild) {
+    const channel = guild.channels.cache.get(process.env.VOICE_CHANNEL_ID);
+    if (channel) {
+      await channel.setName(`${count}`);
+    }
+  }
+
+  res.json({ success: true, executions: count });
+});
+
+// ====== Start server ======
 app.listen(process.env.PORT || 3000, () => {
-  console.log("🚀 API running on port", process.env.PORT || 3000)
-})
+  console.log("🚀 API running on port", process.env.PORT || 3000);
+});
