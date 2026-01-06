@@ -7,7 +7,7 @@ app.use(cors())
 app.use(express.json())
 
 // ================================
-// Upstash Redis (REST)
+// Upstash Redis (REST) - DEBUG
 // ================================
 async function redis(command, ...args) {
   const response = await fetch(process.env.UPSTASH_REDIS_REST_URL, {
@@ -16,17 +16,23 @@ async function redis(command, ...args) {
       Authorization: `Bearer ${process.env.UPSTASH_REDIS_REST_TOKEN}`,
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({
-      command,
-      args
-    })
+    body: JSON.stringify({ command, args })
   })
 
+  const text = await response.text()
+  console.log('🔎 REDIS RAW RESPONSE:', response.status, text)
+
   if (!response.ok) {
-    throw new Error(`Redis HTTP Error: ${response.status}`)
+    throw new Error(`Redis HTTP ${response.status}: ${text}`)
   }
 
-  const data = await response.json()
+  let data
+  try {
+    data = JSON.parse(text)
+  } catch (e) {
+    throw new Error('Redis JSON parse failed: ' + text)
+  }
+
   return data.result
 }
 
@@ -35,13 +41,16 @@ async function redis(command, ...args) {
 // ================================
 app.post('/execute', async (req, res) => {
   try {
-    // 🔐 API Key check
+    console.log('➡️ /execute hit')
+
     if (req.headers['x-api-key'] !== process.env.API_KEY) {
+      console.log('❌ INVALID API KEY:', req.headers['x-api-key'])
       return res.sendStatus(403)
     }
 
-    // 🔢 Increment executions counter
     const count = await redis('INCR', 'executions')
+
+    console.log('✅ EXECUTIONS =', count)
 
     return res.json({
       success: true,
